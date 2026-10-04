@@ -1,0 +1,5 @@
+// {{ unattended_upgrades_managed_marker }}
+
+{% for key, value in unattended_upgrades_apt_general.items() %}
+{{ key }} "{{ value | string | lower if value is boolean else value }}";
+{% endfor %}

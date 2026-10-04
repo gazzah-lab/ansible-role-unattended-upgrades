@@ -1,0 +1,10 @@
+---
+- name: Test unattended_upgrades
+  hosts: all
+  become: true
+  roles:
+    - role: gazzah.unattended_upgrades
+  vars:
+    unattended_upgrades_manage_systemd: false
+    unattended_upgrades_origins_patterns:
+      - origin=Debian,codename=${distro_codename}-security,label=Debian-Security

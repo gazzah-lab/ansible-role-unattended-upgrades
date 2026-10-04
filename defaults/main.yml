@@ -1,0 +1,116 @@
+---
+# defaults file for gazzah.unattended_upgrades
+#
+# Les valeurs par défaut reproduisent le comportement Debian d'origine.
+# Les réglages propres à un groupe se font dans ses group_vars.
+
+unattended_upgrades_packages:
+  - unattended-upgrades
+  - apt-listchanges
+
+unattended_upgrades_apt_install_state: present
+unattended_upgrades_apt_update_cache: true
+unattended_upgrades_apt_cache_valid_time: 3600
+
+unattended_upgrades_config_dir: /etc/apt/apt.conf.d
+
+# Marqueur écrit en tête de chaque fichier généré.
+unattended_upgrades_managed_marker: "ANSIBLE MANAGED - gazzah.unattended_upgrades"
+
+# --- Activation -----------------------------------------------------------------
+# Réponse debconf unattended-upgrades/enable_auto_updates. Comme le postinst du
+# paquet, le rôle installe ensuite son 20auto-upgrades : version activée si
+# true, version désactivée si false et que le fichier existe déjà.
+unattended_upgrades_enabled: true
+
+# Surcharges APT::Periodic::* (0 = désactivé, n = tous les n jours), écrites
+# dans unattended_upgrades_config_filename, lu après 20auto-upgrades.
+# Update-Package-Lists et Unattended-Upgrade sont pilotés par
+# unattended_upgrades_enabled. Exemple : { "AutocleanInterval": "7" }
+unattended_upgrades_periodic: {}
+
+# --- Configuration unattended-upgrades ----------------------------------------
+# Fichier généré dans unattended_upgrades_config_dir, lu après les fichiers du
+# paquet (20auto-upgrades, 50unattended-upgrades), qui sont remis et gardés
+# tels que livrés : ucf les voit intacts et les mises à jour s'appliquent.
+unattended_upgrades_config_filename: 52unattended-upgrades-gazzah
+
+# Dépôts autorisés (syntaxe Origins-Pattern). Défaut Debian : point releases
+# de la stable + sécurité. "origin=*" autorise tous les dépôts configurés.
+# Les paquets en hold et le pinning apt sont toujours respectés.
+unattended_upgrades_origins_patterns:
+  - "origin=Debian,codename=${distro_codename},label=Debian"
+  - "origin=Debian,codename=${distro_codename},label=Debian-Security"
+  - "origin=Debian,codename=${distro_codename}-security,label=Debian-Security"
+
+# Paquets jamais mis à jour (expressions régulières).
+unattended_upgrades_package_blacklist: []
+
+# Si non vide, seuls ces paquets sont mis à jour (expressions régulières).
+# strict = false : leurs dépendances hors liste sont aussi mises à jour.
+unattended_upgrades_package_whitelist: []
+unattended_upgrades_package_whitelist_strict: false
+
+# Destinataires des rapports ; liste vide = pas de mail. Nécessite un MTA.
+unattended_upgrades_mail_recipients: []
+# Adresse From des rapports ; vide = expéditeur par défaut (root@<hôte>).
+unattended_upgrades_mail_sender: ""
+# always | only-on-error | on-change
+unattended_upgrades_mail_report: on-change
+
+unattended_upgrades_minimal_steps: true
+# Lance « dpkg --configure -a » si un dpkg précédent a été interrompu.
+unattended_upgrades_autofix_interrupted_dpkg: true
+
+# Options passées à dpkg (Dpkg::Options) ; vide = comportement Debian.
+# Attention : Dpkg::Options s'applique à tout apt, y compris les apt manuels.
+# ["--force-confdef", "--force-confold"] : un conffile modifié localement est
+# conservé et le paquet est mis à jour ; sans cela unattended-upgrades ignore
+# les paquets dont un conffile modifié change.
+unattended_upgrades_dpkg_options: []
+unattended_upgrades_remove_unused_kernel_packages: true
+unattended_upgrades_remove_new_unused_dependencies: true
+unattended_upgrades_remove_unused_dependencies: false
+
+unattended_upgrades_automatic_reboot: false
+unattended_upgrades_automatic_reboot_with_users: true
+unattended_upgrades_automatic_reboot_time: "02:00"
+
+unattended_upgrades_syslog_enable: false
+unattended_upgrades_syslog_facility: daemon
+
+# Journalisation détaillée dans /var/log/unattended-upgrades/.
+unattended_upgrades_verbose: false
+unattended_upgrades_debug: false
+
+# --- 00proxy ------------------------------------------------------------------
+# Proxy HTTP apt ; vide = fichier non géré.
+unattended_upgrades_apt_proxy: ""
+
+# --- 10general ----------------------------------------------------------------
+# Options apt génériques, rendues en `Clé "valeur";` ; vide = fichier non géré.
+# Exemple : { "APT::Install-Recommends": "false" }
+unattended_upgrades_apt_general: {}
+
+# --- Fichiers à supprimer -----------------------------------------------------
+# Noms de fichiers de unattended_upgrades_config_dir laissés par une gestion
+# précédente et devenus redondants (ex. 10periodic de weareinteractive.apt,
+# doublon de 20auto-upgrades). Un fichier géré par le rôle ou livré par le
+# paquet est refusé.
+unattended_upgrades_remove_files: []
+
+# --- Timers systemd -----------------------------------------------------------
+# OnCalendar vide = pas d'override, le timer Debian s'applique.
+
+# apt-daily.timer (apt update)
+unattended_upgrades_update_timer_on_calendar: ""
+unattended_upgrades_update_timer_randomized_delay_sec: 15m
+unattended_upgrades_update_timer_persistent: true
+
+# apt-daily-upgrade.timer (unattended-upgrade)
+unattended_upgrades_upgrade_timer_on_calendar: ""
+unattended_upgrades_upgrade_timer_randomized_delay_sec: 15m
+unattended_upgrades_upgrade_timer_persistent: true
+
+# Manage daemon reload and timer restarts (false for container config tests).
+unattended_upgrades_manage_systemd: true

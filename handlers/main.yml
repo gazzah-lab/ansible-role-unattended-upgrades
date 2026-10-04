@@ -1,0 +1,21 @@
+---
+# handlers file for gazzah.unattended_upgrades
+
+- name: Reload systemd
+  when: unattended_upgrades_manage_systemd | bool
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Restart apt-daily.timer
+  when: unattended_upgrades_manage_systemd | bool
+  ansible.builtin.systemd:
+    name: apt-daily.timer
+    state: restarted
+    daemon_reload: true
+
+- name: Restart apt-daily-upgrade.timer
+  when: unattended_upgrades_manage_systemd | bool
+  ansible.builtin.systemd:
+    name: apt-daily-upgrade.timer
+    state: restarted
+    daemon_reload: true

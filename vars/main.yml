@@ -1,0 +1,53 @@
+---
+# vars file for gazzah.unattended_upgrades
+
+unattended_upgrades_mail_report_choices:
+  - always
+  - only-on-error
+  - on-change
+
+# Fichiers apt.conf.d gérés ; enabled = false => fichier non touché.
+_unattended_upgrades_apt_files:
+  - src: unattended-upgrades.j2
+    dest: "{{ unattended_upgrades_config_filename }}"
+    enabled: true
+  - src: 00proxy.j2
+    dest: 00proxy
+    enabled: "{{ unattended_upgrades_apt_proxy | length > 0 }}"
+  - src: 10general.j2
+    dest: 10general
+    enabled: "{{ unattended_upgrades_apt_general | length > 0 }}"
+
+# Overrides de timers ; on_calendar vide => pas d'override.
+_unattended_upgrades_timers:
+  - timer: apt-daily.timer
+    on_calendar: "{{ unattended_upgrades_update_timer_on_calendar }}"
+    randomized_delay_sec: "{{ unattended_upgrades_update_timer_randomized_delay_sec }}"
+    persistent: "{{ unattended_upgrades_update_timer_persistent }}"
+  - timer: apt-daily-upgrade.timer
+    on_calendar: "{{ unattended_upgrades_upgrade_timer_on_calendar }}"
+    randomized_delay_sec: "{{ unattended_upgrades_upgrade_timer_randomized_delay_sec }}"
+    persistent: "{{ unattended_upgrades_upgrade_timer_persistent }}"
+
+# Fichiers livrés par le paquet (gérés par ucf) et leur version de référence.
+_unattended_upgrades_package_dir: /usr/share/unattended-upgrades
+_unattended_upgrades_package_files:
+  - 20auto-upgrades
+  - 50unattended-upgrades
+_unattended_upgrades_package_sources:
+  - 20auto-upgrades
+  - 20auto-upgrades-disabled
+  - 50unattended-upgrades
+_unattended_upgrades_ucf_leftovers:
+  - .ucf-dist
+  - .ucf-old
+  - .ucf-new
+
+# Fichiers du paquet à (ré)installer, calculés après le stat de 20auto-upgrades.
+_unattended_upgrades_packaged:
+  - name: 20auto-upgrades
+    src: "20auto-upgrades{{ '' if unattended_upgrades_enabled | bool else '-disabled' }}"
+    install: "{{ unattended_upgrades_enabled | bool or _unattended_upgrades_auto_upgrades_stat.stat.exists }}"
+  - name: 50unattended-upgrades
+    src: 50unattended-upgrades
+    install: true

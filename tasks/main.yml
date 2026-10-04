@@ -1,0 +1,277 @@
+---
+# tasks file for gazzah.unattended_upgrades
+
+- name: Validate role parameters
+  tags:
+    - configuration
+    - unattended-upgrades
+    - always
+    - unattended-upgrades-config
+  block:
+    - name: Validate platform
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.os_family | default('') == "Debian"
+        fail_msg: >-
+          Plateforme non supportée : {{ ansible_facts.os_family | default('inconnue (facts non collectés ?)') }},
+          seule la famille Debian est supportée.
+        quiet: true
+
+    - name: Validate list parameters
+      ansible.builtin.assert:
+        that:
+          - unattended_upgrades_origins_patterns is sequence
+          - unattended_upgrades_origins_patterns is not string
+          - unattended_upgrades_origins_patterns | length > 0
+          - unattended_upgrades_package_blacklist is sequence
+          - unattended_upgrades_package_blacklist is not string
+          - unattended_upgrades_package_whitelist is sequence
+          - unattended_upgrades_package_whitelist is not string
+          - unattended_upgrades_dpkg_options is sequence
+          - unattended_upgrades_dpkg_options is not string
+          - unattended_upgrades_mail_recipients is sequence
+          - unattended_upgrades_mail_recipients is not string
+          - unattended_upgrades_periodic is mapping
+          - unattended_upgrades_apt_general is mapping
+          - unattended_upgrades_remove_files is sequence
+          - unattended_upgrades_remove_files is not string
+        fail_msg: >-
+          Paramètre invalide : origins_patterns (liste non vide), package_blacklist,
+          package_whitelist, dpkg_options, mail_recipients et remove_files (listes),
+          periodic et apt_general (dictionnaires).
+        quiet: true
+
+    - name: Validate configuration filename
+      ansible.builtin.assert:
+        that:
+          - unattended_upgrades_config_filename is string
+          - unattended_upgrades_config_filename | length > 0
+          - unattended_upgrades_config_filename is not search('/')
+          - unattended_upgrades_config_filename not in _unattended_upgrades_package_files
+        fail_msg: >-
+          unattended_upgrades_config_filename = {{ unattended_upgrades_config_filename }} :
+          nom de fichier seul, différent des fichiers du paquet
+          ({{ _unattended_upgrades_package_files | join(', ') }}), qui restent tels que livrés.
+        quiet: true
+
+    - name: Validate periodic overrides
+      ansible.builtin.assert:
+        that:
+          - "'Update-Package-Lists' not in unattended_upgrades_periodic"
+          - "'Unattended-Upgrade' not in unattended_upgrades_periodic"
+        fail_msg: >-
+          unattended_upgrades_periodic ne doit pas contenir Update-Package-Lists ni
+          Unattended-Upgrade : ils sont pilotés par unattended_upgrades_enabled.
+        quiet: true
+
+    - name: Validate files to remove
+      vars:
+        _protected_files: >-
+          {{ _unattended_upgrades_apt_files | selectattr('enabled', 'truthy') | map(attribute='dest') | list
+             + _unattended_upgrades_package_files }}
+      ansible.builtin.assert:
+        that:
+          - item is string
+          - item | length > 0
+          - item is not search('/')
+          - item not in _protected_files
+        fail_msg: >-
+          unattended_upgrades_remove_files : « {{ item }} » refusé (nom de fichier
+          seul, sans /, différent des fichiers gérés ou livrés par le paquet :
+          {{ _protected_files | join(', ') }}).
+        quiet: true
+      loop: "{{ unattended_upgrades_remove_files }}"
+
+    - name: Validate mail report
+      ansible.builtin.assert:
+        that:
+          - unattended_upgrades_mail_report in unattended_upgrades_mail_report_choices
+        fail_msg: >-
+          unattended_upgrades_mail_report = {{ unattended_upgrades_mail_report }} ;
+          valeurs acceptées : {{ unattended_upgrades_mail_report_choices | join(', ') }}.
+        quiet: true
+
+# Le postinst du paquet installe 20auto-upgrades selon cette réponse : elle
+# doit refléter l'état voulu, sinon une reconfiguration le désactive.
+- name: Set unattended-upgrades debconf answer
+  ansible.builtin.debconf:
+    name: unattended-upgrades
+    question: unattended-upgrades/enable_auto_updates
+    vtype: boolean
+    value: "{{ unattended_upgrades_enabled | bool | string | lower }}"
+  tags:
+    - configuration
+    - unattended-upgrades
+    - unattended-upgrades-install
+
+- name: Install unattended-upgrades packages
+  ansible.builtin.apt:
+    name: "{{ unattended_upgrades_packages }}"
+    state: "{{ unattended_upgrades_apt_install_state }}"
+    update_cache: "{{ unattended_upgrades_apt_update_cache | bool }}"
+    cache_valid_time: "{{ unattended_upgrades_apt_cache_valid_time }}"
+  tags:
+    - configuration
+    - unattended-upgrades
+    - unattended-upgrades-install
+
+# 20auto-upgrades et 50unattended-upgrades appartiennent au paquet (ucf) : ils
+# sont remis dans la version livrée, comme le ferait le postinst, puis
+# enregistrés auprès d'ucf pour que les mises à jour s'appliquent sans conflit.
+- name: Manage packaged configuration files
+  tags:
+    - configuration
+    - unattended-upgrades
+    - unattended-upgrades-config
+  block:
+    - name: Check packaged reference files
+      ansible.builtin.stat:
+        path: "{{ _unattended_upgrades_package_dir }}/{{ item }}"
+      loop: "{{ _unattended_upgrades_package_sources }}"
+      register: _unattended_upgrades_sources_stat
+
+    - name: Validate packaged reference files
+      ansible.builtin.assert:
+        that:
+          - _unattended_upgrades_sources_stat.results | rejectattr('stat.exists') | list | length == 0
+        fail_msg: >-
+          Fichiers de référence absents de {{ _unattended_upgrades_package_dir }} :
+          {{ _unattended_upgrades_sources_stat.results | rejectattr('stat.exists') | map(attribute='item') | join(', ') }}.
+        quiet: true
+      # En check mode, le paquet peut ne pas être encore installé.
+      when: not ansible_check_mode
+
+    - name: Check current 20auto-upgrades
+      ansible.builtin.stat:
+        path: "{{ unattended_upgrades_config_dir }}/20auto-upgrades"
+      register: _unattended_upgrades_auto_upgrades_stat
+
+    - name: Read ucf state of packaged files
+      ansible.builtin.command:
+        argv: [ucfq, --with-colons, unattended-upgrades]
+      register: _unattended_upgrades_ucfq
+      changed_when: false
+      check_mode: false
+      failed_when: false
+
+    - name: Install packaged configuration files
+      ansible.builtin.copy:
+        src: "{{ _unattended_upgrades_package_dir }}/{{ item.src }}"
+        dest: "{{ unattended_upgrades_config_dir }}/{{ item.name }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ _unattended_upgrades_packaged }}"
+      loop_control:
+        label: "{{ item.name }} <- {{ item.src }}"
+      when:
+        - item.install | bool
+        - not ansible_check_mode or (_unattended_upgrades_sources_stat.results | rejectattr('stat.exists') | list | length == 0)
+      register: _unattended_upgrades_packaged_copy
+
+    # Fichier identique à la référence : ucf enregistre seulement son hash.
+    - name: Register packaged configuration files with ucf
+      ansible.builtin.shell: >-
+        ucf --three-way --debconf-ok {{ (_unattended_upgrades_package_dir ~ '/' ~ item.item.src) | quote }}
+        {{ (unattended_upgrades_config_dir ~ '/' ~ item.item.name) | quote }}
+        && ucfr unattended-upgrades {{ (unattended_upgrades_config_dir ~ '/' ~ item.item.name) | quote }}
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+      loop: "{{ _unattended_upgrades_packaged_copy.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when:
+        - item is not skipped
+        - >-
+          item is changed or
+          (unattended_upgrades_config_dir ~ '/' ~ item.item.name ~ ':unattended-upgrades:Yes:No')
+          not in _unattended_upgrades_ucfq.stdout_lines
+
+    - name: Remove ucf leftovers of packaged files
+      ansible.builtin.file:
+        path: "{{ unattended_upgrades_config_dir }}/{{ item.0 }}{{ item.1 }}"
+        state: absent
+      loop: "{{ _unattended_upgrades_package_files | product(_unattended_upgrades_ucf_leftovers) | list }}"
+      loop_control:
+        label: "{{ item.0 }}{{ item.1 }}"
+
+- name: Deploy apt configuration files
+  ansible.builtin.template:
+    validate: /usr/bin/apt-config -c %s dump
+    src: "{{ item.src }}"
+    dest: "{{ unattended_upgrades_config_dir }}/{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ _unattended_upgrades_apt_files }}"
+  loop_control:
+    label: "{{ item.dest }}"
+  when: item.enabled | bool
+  # Reject malformed APT syntax before replacing any live configuration.
+  tags:
+    - configuration
+    - unattended-upgrades
+    - unattended-upgrades-config
+
+- name: Remove redundant apt configuration files
+  ansible.builtin.file:
+    path: "{{ unattended_upgrades_config_dir }}/{{ item }}"
+    state: absent
+  loop: "{{ unattended_upgrades_remove_files }}"
+  tags:
+    - configuration
+    - unattended-upgrades
+    - unattended-upgrades-config
+
+- name: Ensure systemd timer drop-in directories exist
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ item.timer }}.d"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ _unattended_upgrades_timers }}"
+  loop_control:
+    label: "{{ item.timer }}"
+  when: item.on_calendar | length > 0
+  tags:
+    - configuration
+    - unattended-upgrades
+    - unattended-upgrades-timers
+
+- name: Deploy systemd timer overrides
+  ansible.builtin.template:
+    src: timer-override.conf.j2
+    dest: "/etc/systemd/system/{{ item.timer }}.d/override.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ _unattended_upgrades_timers }}"
+  loop_control:
+    label: "{{ item.timer }} : {{ item.on_calendar }}"
+  when: item.on_calendar | length > 0
+  notify: "Restart {{ item.timer }}"
+  tags:
+    - configuration
+    - unattended-upgrades
+    - unattended-upgrades-timers
+
+
+- name: Find obsolete owned timer drop-ins
+  ansible.builtin.find:
+    paths: "/etc/systemd/system/{{ item.timer }}.d"
+    patterns: override.conf
+    contains: "# {{ unattended_upgrades_managed_marker | regex_escape }}$"
+  loop: "{{ _unattended_upgrades_timers }}"
+  when: item.on_calendar | length == 0
+  register: _unattended_upgrades_obsolete_timers
+  tags: [unattended-upgrades, unattended-upgrades-timers]
+
+- name: Remove obsolete owned timer drop-ins
+  ansible.builtin.file:
+    path: "{{ item.1.path }}"
+    state: absent
+  loop: "{{ _unattended_upgrades_obsolete_timers.results | subelements('files', skip_missing=true) }}"
+  notify: "Restart {{ item.0.item.timer }}"
+  tags: [unattended-upgrades, unattended-upgrades-timers]

@@ -1,0 +1,7 @@
+# {{ unattended_upgrades_managed_marker }}
+
+[Timer]
+OnCalendar=
+OnCalendar={{ item.on_calendar }}
+RandomizedDelaySec={{ item.randomized_delay_sec }}
+Persistent={{ item.persistent | bool | lower }}

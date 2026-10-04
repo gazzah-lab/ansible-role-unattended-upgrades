@@ -1,0 +1,70 @@
+// {{ unattended_upgrades_managed_marker }}
+//
+// Lu après 20auto-upgrades et 50unattended-upgrades, laissés tels que livrés
+// par le paquet. Les listes sont vidées (#clear) avant d'être redéfinies : les
+// valeurs du 50unattended-upgrades ne s'y ajoutent pas.
+// Les paquets en hold (apt-mark hold) et le pinning apt sont toujours respectés.
+
+#clear Unattended-Upgrade::Allowed-Origins;
+#clear Unattended-Upgrade::Origins-Pattern;
+Unattended-Upgrade::Origins-Pattern {
+{% for pattern in unattended_upgrades_origins_patterns %}
+        "{{ pattern }}";
+{% endfor %}
+};
+
+#clear Unattended-Upgrade::Package-Blacklist;
+Unattended-Upgrade::Package-Blacklist {
+{% for package in unattended_upgrades_package_blacklist %}
+        "{{ package }}";
+{% endfor %}
+};
+
+#clear Unattended-Upgrade::Package-Whitelist;
+Unattended-Upgrade::Package-Whitelist {
+{% for package in unattended_upgrades_package_whitelist %}
+        "{{ package }}";
+{% endfor %}
+};
+Unattended-Upgrade::Package-Whitelist-Strict "{{ unattended_upgrades_package_whitelist_strict | bool | lower }}";
+
+Unattended-Upgrade::AutoFixInterruptedDpkg "{{ unattended_upgrades_autofix_interrupted_dpkg | bool | lower }}";
+Unattended-Upgrade::MinimalSteps "{{ unattended_upgrades_minimal_steps | bool | lower }}";
+
+{% if unattended_upgrades_mail_recipients | length > 0 %}
+Unattended-Upgrade::Mail "{{ unattended_upgrades_mail_recipients | join(',') }}";
+Unattended-Upgrade::MailReport "{{ unattended_upgrades_mail_report }}";
+{% if unattended_upgrades_mail_sender | length > 0 %}
+Unattended-Upgrade::Sender "{{ unattended_upgrades_mail_sender }}";
+{% endif %}
+{% else %}
+#clear Unattended-Upgrade::Mail;
+{% endif %}
+
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "{{ unattended_upgrades_remove_unused_kernel_packages | bool | lower }}";
+Unattended-Upgrade::Remove-New-Unused-Dependencies "{{ unattended_upgrades_remove_new_unused_dependencies | bool | lower }}";
+Unattended-Upgrade::Remove-Unused-Dependencies "{{ unattended_upgrades_remove_unused_dependencies | bool | lower }}";
+
+Unattended-Upgrade::Automatic-Reboot "{{ unattended_upgrades_automatic_reboot | bool | lower }}";
+Unattended-Upgrade::Automatic-Reboot-WithUsers "{{ unattended_upgrades_automatic_reboot_with_users | bool | lower }}";
+Unattended-Upgrade::Automatic-Reboot-Time "{{ unattended_upgrades_automatic_reboot_time }}";
+
+Unattended-Upgrade::SyslogEnable "{{ unattended_upgrades_syslog_enable | bool | lower }}";
+Unattended-Upgrade::SyslogFacility "{{ unattended_upgrades_syslog_facility }}";
+
+Unattended-Upgrade::Verbose "{{ unattended_upgrades_verbose | bool | lower }}";
+Unattended-Upgrade::Debug "{{ unattended_upgrades_debug | bool | lower }}";
+{% if unattended_upgrades_dpkg_options | length > 0 %}
+
+Dpkg::Options {
+{% for option in unattended_upgrades_dpkg_options %}
+        "{{ option }}";
+{% endfor %}
+};
+{% endif %}
+{% if unattended_upgrades_periodic | length > 0 %}
+
+{% for key, value in unattended_upgrades_periodic.items() %}
+APT::Periodic::{{ key }} "{{ value }}";
+{% endfor %}
+{% endif %}
